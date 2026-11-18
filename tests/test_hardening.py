@@ -472,15 +472,15 @@ class ContextTests(unittest.TestCase):
         ):
             self.assertEqual(self.history(entries), [])
 
-    def test_history_expires_and_obeys_record_capacity(self):
+    @patch("read_animation.context.time.monotonic", return_value=100.0)
+    def test_history_expires_and_obeys_record_capacity(self, clock):
         for i in range(513):
             self.context.record({"session_id": "s", "message_id": str(i)}, ["note"])
         entries = [self.entry("old", "0"), self.entry("new", "512")]
+        clock.return_value += 899
         self.assertEqual([ref["handle"] for ref in self.history(entries)], ["new"])
-        with patch(
-            "read_animation.context.time.monotonic", return_value=time.monotonic() + 900
-        ):
-            self.assertEqual(self.history(entries), [])
+        clock.return_value += 1
+        self.assertEqual(self.history(entries), [])
 
     def test_history_and_late_target_share_limits_without_consuming_retry(self):
         entries = []
