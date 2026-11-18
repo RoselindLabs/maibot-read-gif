@@ -97,8 +97,8 @@ python scripts/package.py
 ```
 
 测试使用真实SDK与合成媒体/FakeLlm，禁止网络、真实模型和QQ。包按白名单创建并解压后隔离导入，
-不包含配置、缓存、聊天数据、密钥或生产脚本。GitHub CI运行Linux Python3.14.4和Windows Python3.12，
-SDK固定2.20.0；两组测试/打包及ci-gate/publish-gate实际成功才可发布同一main SHA。
+不包含配置、缓存、聊天数据、密钥或生产脚本。GitHub CI的生产组合为Ubuntu 24.04、CPython 3.14.4、SDK 2.23.0；
+Windows最低组合为Python 3.12、SDK 2.20.0。两组测试/打包及ci-gate/publish-gate实际成功才可发布同一main SHA。
 工作流只验证源码，不自动部署或发布Release。
 
 维护实例沿既有原目录/ID热加载：`python scripts/update_maibot_plugin.py maibot-read-gif`（该命令属于运维仓，非本插件）。
