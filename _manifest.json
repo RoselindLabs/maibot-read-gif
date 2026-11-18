@@ -1,9 +1,9 @@
 {
   "manifest_version": 2,
   "id": "github.fabiocsa.read-gif",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "name": "GIF 动图识别（Read GIF）",
-  "description": "检测聊天里的 GIF / 动态 WebP / APNG，抽取多帧拼成带时间标注的帧板，调用宿主视觉模型生成动图描述并注入消息，让麦麦真正看懂动图。",
+  "description": "采样 GIF / 动态 WebP / APNG，经宿主视觉模型生成描述；仅向 Planner/Replyer 提供有来源标识的派生上下文，支持按本轮历史消息精确关联，不改写原消息。",
   "author": {
     "name": "fabiocsa",
     "url": "https://github.com/fabiocsa"

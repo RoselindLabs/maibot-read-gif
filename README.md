@@ -4,7 +4,7 @@
 保留完整上游历史、作者和MIT许可，不是独立原创。原插件思路参考
 [dsh-read-animation](https://github.com/NeoHotaru/dsh-read-animation)，归属见 [NOTICE.md](NOTICE.md)。
 
-当前维护版 **0.2.2**，要求 **MaiBot >=1.3.19、SDK >=2.20.0、Python >=3.12**。
+当前维护版 **0.2.3**，要求 **MaiBot >=1.3.19、SDK >=2.20.0、Python >=3.12**。
 插件ID仍为`github.fabiocsa.read-gif`，不与原版双开，不更换原数据目录。
 
 ## 做什么
@@ -12,11 +12,22 @@
 - 检测入站image/emoji中的GIF、动画WebP、APNG；静态图跳过，不支持file附件或MP4/WebM。
 - 按累计时长采样（最多8帧），生成带帧号/时长的单张帧板，调用宿主已有`vlm`任务。
 - **原消息不改写**：生成描述不再追加为用户TextComponent，不写进原聊天记录或原消息学习输入。
-  描述保留在512条/15分钟内存索引中，仅在Planner/Replyer请求前以独立、不可信的派生Item补入。
+  描述保留在512条/15分钟内存索引中，仅用于Planner/Replyer请求：以独立派生Item或历史条目的参考文字提供，并标明非用户原话、不可信。
 - 普通聊天按真实会话和消息ID关联；共享Focus从Host的reply工具Schema读取允许会话，
   只认真实UserMessageItem首段偏移0的Host首行（包括与用户文字合并的part），严格检查完整属性；
   不从用户正文/群名猜归属。Replyer兼容Host原始目标消息ID。
   无法可靠匹配就跳过，不修改工具调用/输出/原Item/路由或provider replay。
+
+支持 `maisaka.replyer.prepare_history` 的宿主在整理本轮历史时发送 `schema_version: 1`、
+`session_id`、`reply_message_id` 和 `entries: [{handle, message_id, is_self, pure_voice}]`。
+插件只按顶层会话和完整原始消息ID查内存索引，不扫描正文、解析缩短ID或另查历史。
+来源是动图索引而非语音标志。返回 `action: continue` 和 `custom_result: {schema_version: 1, references: [{handle, text}]}`；
+`text` 保留原采样描述和不可信标识。自身消息、重复消息、歧义handle及当前回复目标均不生成历史引用。
+
+当前目标仍由 `maisaka.replyer.before_model_request` 处理。历史引用和目标描述合计最多8条、6000字符；
+指定目标时预留1条及目标单条上限（4000字符载荷加来源标识），即使目标记录在两次Hook之间才到达也不会挤占预算。
+无目标时历史可用全部额度。handle和去重集合仅限本次调用，重试按当时有效的索引和新一轮handle重新生成，不额外调用视觉模型。
+未触发新Hook的旧宿主仍走原有请求Hook，Planner/Focus无需支持新协议。
 
 描述仍可能影响模型的后续回复或其自然记忆，不能宣称完全不会间接进入摘要；
 这里保证的是插件不把描述伪装成入站原话，不额外写真实消息、表达学习或黑话记录。

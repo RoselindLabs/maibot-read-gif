@@ -50,3 +50,8 @@
 
 - Match the offset-zero Host header even when merged with user text; validate complete attributes and preserve scope, aliases and original items.
 - Add real Host prefix/serialization roundtrip contracts and content-free bounded reason counters; no extra model calls or Host changes.
+
+# 0.2.3 — scoped Replyer history references
+
+- Add `maisaka.replyer.prepare_history` v1: return untrusted sampling notes for Host-selected non-self history entries by exact session and original message ID. No text matching, history retrieval or additional vision calls.
+- Leave the direct target to the existing Replyer hook and reserve its count/character budget. Retries resolve fresh handles; old Host, Planner and shared Focus matching stay unchanged.

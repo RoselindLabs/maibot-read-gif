@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import asyncio
+import copy
 import importlib.util
 import json
 import logging
@@ -73,6 +74,7 @@ class PluginContractTests(unittest.TestCase):
         ):
             self.assertIn(key, manifest)
         self.assertEqual(manifest["manifest_version"], 2)
+        self.assertEqual(manifest["version"], "0.2.3")
         self.assertEqual(manifest["id"], "github.fabiocsa.read-gif")
         self.assertIn("GIF", manifest["name"])
         self.assertEqual(manifest["license"], "MIT")
@@ -107,6 +109,7 @@ class PluginContractTests(unittest.TestCase):
             {
                 "chat.receive.before_process",
                 "maisaka.planner.before_request",
+                "maisaka.replyer.prepare_history",
                 "maisaka.replyer.before_model_request",
             },
         )
@@ -122,7 +125,7 @@ class PluginContractTests(unittest.TestCase):
         schema = instance.build_config_schema(
             plugin_id="github.fabiocsa.read-gif",
             plugin_name="GIF 动图识别",
-            plugin_version="0.2.2",
+            plugin_version="0.2.3",
         )
         self.assertIn("sections", schema)
         self.assertIn("plugin", schema["sections"])
@@ -153,6 +156,42 @@ class PluginContractTests(unittest.TestCase):
                 result = await instance.handle_before_process(message=message)
                 self.assertIsNone(result)
                 self.assertEqual(json.dumps(message, sort_keys=True), original)
+                history_args = {
+                    "schema_version": 1,
+                    "session_id": "session-1",
+                    "reply_message_id": "new-question",
+                    "entries": [
+                        {
+                            "handle": "h4",
+                            "message_id": "msg-1",
+                            "is_self": False,
+                            "pure_voice": False,
+                        }
+                    ],
+                }
+                before = copy.deepcopy(history_args)
+                history = await instance.prepare_history(**history_args)
+                self.assertEqual(history_args, before)
+                self.assertEqual(set(history), {"action", "custom_result"})
+                self.assertEqual(history["action"], "continue")
+                references = history["custom_result"]["references"]
+                self.assertEqual(
+                    history["custom_result"],
+                    {"schema_version": 1, "references": references},
+                )
+                (ref,) = references
+                self.assertEqual(set(ref), {"handle", "text"})
+                self.assertEqual(ref["handle"], "h4")
+                for expected in (
+                    "不可信数据",
+                    "非用户原话",
+                    "画面：",
+                    DEFAULT_DESCRIPTION,
+                ):
+                    self.assertIn(expected, ref["text"])
+                self.assertEqual(
+                    await instance.prepare_history(**history_args), history
+                )
                 items = [
                     {
                         "item_type": "UserMessageItem",
@@ -183,6 +222,44 @@ class PluginContractTests(unittest.TestCase):
         self.assertIn("画面：", injected_texts[0])
         self.assertIn(DEFAULT_DESCRIPTION, injected_texts[0])
         self.assertEqual(len(fake_llm.calls), 1)
+
+    def test_history_requires_enabled_live_processor(self) -> None:
+        instance = self._module.create_plugin()
+        history_args = {
+            "schema_version": 1,
+            "session_id": "s",
+            "reply_message_id": "",
+            "entries": [
+                {
+                    "handle": "h",
+                    "message_id": "m",
+                    "is_self": False,
+                    "pure_voice": False,
+                }
+            ],
+        }
+        instance._derived.record({"session_id": "s", "message_id": "m"}, ["note"])
+        for processor, config in (
+            (None, {}),
+            (object(), {"plugin": {"config_version": "1.3.0", "enabled": False}}),
+            (
+                object(),
+                {
+                    "plugin": {"config_version": "1.3.0"},
+                    "trigger": {"trigger_mode": "off"},
+                },
+            ),
+        ):
+            with self.subTest(config=config):
+                instance._processor = processor
+                instance.set_plugin_config(config)
+                self.assertEqual(
+                    asyncio.run(instance.prepare_history(**history_args)),
+                    {
+                        "action": "continue",
+                        "custom_result": {"schema_version": 1, "references": []},
+                    },
+                )
 
 
 if __name__ == "__main__":

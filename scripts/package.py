@@ -63,13 +63,14 @@ from maibot_sdk import MaiBotPlugin
 plugin=module.create_plugin()
 assert isinstance(plugin,MaiBotPlugin)
 components=plugin.get_components()
-assert len(components)==3 and all(c['type']=='HOOK_HANDLER' for c in components)
+assert len(components)==4 and all(c['type']=='HOOK_HANDLER' for c in components)
+assert {c['metadata']['hook'] for c in components} == {'chat.receive.before_process','maisaka.planner.before_request','maisaka.replyer.prepare_history','maisaka.replyer.before_model_request'}
 assert plugin.build_default_config()['vlm']['max_tokens']==4096
 assert plugin.build_default_config()['vlm']['retry_empty_response'] is False
 assert plugin.build_default_config()['plugin']['config_version']=='1.3.0'
 assert pathlib.Path(module.__file__).resolve().is_relative_to(root)
 assert json.loads((root/'_manifest.json').read_text(encoding='utf-8'))['id']=='github.fabiocsa.read-gif'
-print('Isolated package / real SDK / three Hook discovery passed; no on_load/model/QQ')
+print('Isolated package / real SDK / four Hook discovery passed; no on_load/model/QQ')
 """
         subprocess.run(
             [sys.executable, "-I", "-X", "utf8", "-c", program, str(root)],

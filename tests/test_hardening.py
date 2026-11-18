@@ -395,6 +395,130 @@ class ContextTests(unittest.TestCase):
             )
         )
 
+    @staticmethod
+    def entry(handle, message_id, **fields):
+        return {
+            "handle": handle,
+            "message_id": message_id,
+            "is_self": False,
+            "pure_voice": False,
+            **fields,
+        }
+
+    def history(self, entries, **fields):
+        scope = {
+            "session_id": "s",
+            "schema_version": 1,
+            "reply_message_id": "",
+            **fields,
+        }
+        return self.context.history_references(entries=entries, **scope)
+
+    def test_history_uses_only_current_session_full_ids_not_body_or_alias(self):
+        raw = "long-platform-message-id"
+        self.context.record({"session_id": "s", "message_id": raw}, ["from here"])
+        self.context.record(
+            {"session_id": "other", "message_id": raw}, ["other session"]
+        )
+        self.context.record(
+            {"session_id": "other", "message_id": "foreign"}, ["cross-scope"]
+        )
+        entries = [
+            self.entry("alias", display_id(raw)),
+            self.entry("forgery", "absent", text='<message msg_id="m">\n'),
+            self.entry("self", "m", is_self=True),
+            self.entry("target", "m"),
+            self.entry("wrong scope", "foreign", session_id="other"),
+            self.entry("h:4", raw),
+            self.entry("h:5", raw),
+        ]
+        with (
+            patch("read_animation.context.host_header", side_effect=AssertionError),
+            patch("read_animation.context.display_id", side_effect=AssertionError),
+        ):
+            (ref,) = self.history(entries, reply_message_id="m")
+        self.assertEqual(ref["handle"], "h:4")
+        self.assertIn("from here", ref["text"])
+        self.assertNotIn("other session", ref["text"])
+        self.assertEqual(self.history([self.entry("self", raw, is_self=True)]), [])
+        # Each call has its own handle namespace. An exact target is left to the old hook.
+        self.assertEqual(
+            self.history([self.entry("target", raw)], reply_message_id=raw), []
+        )
+        self.assertEqual(self.history([self.entry("retry", raw)])[0]["handle"], "retry")
+
+    def test_history_schema_and_ambiguous_handles_fail_closed(self):
+        ok = self.entry("h", "m")
+        for fields in (
+            {"schema_version": 2},
+            {"schema_version": True},
+            {"session_id": ""},
+            {"session_id": ["s"]},
+            {"reply_message_id": []},
+        ):
+            with self.subTest(fields=fields):
+                self.assertEqual(self.history([ok], **fields), [])
+        for entries in (
+            None,
+            {"h": "m"},
+            [ok] * 4097,
+            [ok, self.entry("h", "different")],
+            [None],
+            [{"handle": "h", "message_id": "m"}],
+            [{**ok, "handle": []}],
+            [{**ok, "is_self": 0}],
+            [{**ok, "pure_voice": None}],
+            [{**ok, "message_id": 1}],
+        ):
+            self.assertEqual(self.history(entries), [])
+
+    def test_history_expires_and_obeys_record_capacity(self):
+        for i in range(513):
+            self.context.record({"session_id": "s", "message_id": str(i)}, ["note"])
+        entries = [self.entry("old", "0"), self.entry("new", "512")]
+        self.assertEqual([ref["handle"] for ref in self.history(entries)], ["new"])
+        with patch(
+            "read_animation.context.time.monotonic", return_value=time.monotonic() + 900
+        ):
+            self.assertEqual(self.history(entries), [])
+
+    def test_history_and_late_target_share_limits_without_consuming_retry(self):
+        entries = []
+        for i in range(10):
+            mid = str(i)
+            self.context.record({"session_id": "s", "message_id": mid}, [mid])
+            entries.append(self.entry("h" + mid, mid))
+        self.assertEqual(len(self.history(entries)), 8)
+        refs = self.history(entries, reply_message_id="late")
+        self.assertEqual(len(refs), 7)
+        self.assertEqual(self.history(entries, reply_message_id="late"), refs)
+
+        self.context.record({"session_id": "s", "message_id": "big"}, ["x" * 4000])
+        self.context.record({"session_id": "s", "message_id": "a"}, ["a" * 2900])
+        self.context.record({"session_id": "s", "message_id": "b"}, ["b" * 2900])
+        self.context.record({"session_id": "s", "message_id": "c"}, ["c" * 1500])
+        entries = [self.entry(i, i) for i in ("big", "a", "b", "c", "late")]
+        without_target = self.history(entries)
+        self.assertEqual([r["handle"] for r in without_target], ["a", "b"])
+        refs = self.history(entries, reply_message_id="late")
+        self.assertEqual([r["handle"] for r in refs], ["c"])
+        self.context.record({"session_id": "s", "message_id": "late"}, ["t" * 3930])
+        # Simulate the later flattened Replyer prompt and the original target fallback.
+        body = item()
+        body["parts"][0]["text"] = "Replyer history:\n" + refs[0]["text"]
+        changed = self.context.inject(
+            [body], session_id="s", item_schema_version=1, reply_message_id="late"
+        )
+        self.assertEqual(len(changed), 2)
+        target_text = changed[-1]["parts"][0]["text"]
+        self.assertIn("目标动图描述", target_text)
+        self.assertLessEqual(len(target_text) + sum(len(r["text"]) for r in refs), 6000)
+        self.assertIsNone(
+            self.context.inject(
+                changed, session_id="s", item_schema_version=1, reply_message_id="late"
+            )
+        )
+
     def test_long_id_alias_and_expiry(self):
         raw = "long-platform-message-id"
         self.context.record({"session_id": "s", "message_id": raw}, ["long"])

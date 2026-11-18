@@ -38,7 +38,7 @@ class ReadGifPlugin(MaiBotPlugin):
                 cache_path=self.ctx.paths.data_dir / CACHE_FILE_NAME,
             )
             await self._processor.initialize()
-        self.ctx.logger.info("GIF 动图识别插件已加载（维护版0.2.2，门卫准入后识别）")
+        self.ctx.logger.info("GIF 动图识别插件已加载（维护版0.2.3，门卫准入后识别）")
 
     async def on_unload(self):
         async with self._lifecycle:
@@ -90,12 +90,15 @@ class ReadGifPlugin(MaiBotPlugin):
             self._derived.record(message, notes)
         return None  # No generated text is returned to the raw IM/storage/learning pipeline.
 
+    def _context_enabled(self):
+        return (
+            self._processor is not None
+            and self.config.plugin.enabled
+            and self.config.trigger.trigger_mode != "off"
+        )
+
     def _request_context(self, **kwargs):
-        if (
-            self._processor is None
-            or not self.config.plugin.enabled
-            or self.config.trigger.trigger_mode == "off"
-        ):
+        if not self._context_enabled():
             return None
         items = self._derived.inject(
             kwargs.get("items"),
@@ -118,6 +121,36 @@ class ReadGifPlugin(MaiBotPlugin):
     )
     async def planner_context(self, **kwargs):
         return self._request_context(**kwargs)
+
+    @HookHandler(
+        "maisaka.replyer.prepare_history",
+        name="animation_history_references",
+        description="为本轮 Host 选定的非目标历史消息提供短期动图描述。",
+        mode=HookMode.BLOCKING,
+        order=HookOrder.LATE,
+        timeout_ms=1000,
+        error_policy=ErrorPolicy.SKIP,
+    )
+    async def prepare_history(
+        self,
+        schema_version=None,
+        session_id=None,
+        reply_message_id=None,
+        entries=None,
+        **kwargs,
+    ):
+        references = []
+        if self._context_enabled():
+            references = self._derived.history_references(
+                schema_version=schema_version,
+                session_id=session_id,
+                reply_message_id=reply_message_id,
+                entries=entries,
+            )
+        return {
+            "action": "continue",
+            "custom_result": {"schema_version": 1, "references": references},
+        }
 
     @HookHandler(
         "maisaka.replyer.before_model_request",

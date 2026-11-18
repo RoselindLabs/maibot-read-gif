@@ -122,7 +122,7 @@ async def verify(args):
         assert runner._prepare_plugin_activation(meta) is None and not meta.config_error
         assert await runner._activate_plugin(meta) == PluginActivationStatus.LOADED
         try:
-            assert len(registrations[0]["components"]) == 3
+            assert len(registrations[0]["components"]) == 4
             frames = [
                 Image.new("RGB", (32, 32), color) for color in ("red", "blue", "green")
             ]
@@ -175,6 +175,37 @@ async def verify(args):
             assert "modified_kwargs" not in received and original == json.dumps(
                 message, sort_keys=True
             )
+            history_args = {
+                "schema_version": 1,
+                "session_id": "s",
+                "entries": [
+                    {
+                        "handle": "h1",
+                        "message_id": "1001",
+                        "is_self": False,
+                        "pure_voice": False,
+                    }
+                ],
+            }
+            for target_id in ("", "1001"):
+                history = await invoke(
+                    "animation_history_references",
+                    reply_message_id=target_id,
+                    **history_args,
+                )
+                assert (
+                    "modified_kwargs" not in history
+                    or history["modified_kwargs"] is None
+                )
+                result = history["custom_result"]
+                assert result["schema_version"] == 1
+                if target_id:
+                    assert result["references"] == []
+                else:
+                    (ref,) = result["references"]
+                    assert (
+                        ref["handle"] == "h1" and "synthetic animation" in ref["text"]
+                    )
             header = build_planner_prefix(
                 timestamp=datetime(2026, 11, 3),
                 user_name="synthetic",
@@ -353,7 +384,8 @@ async def verify(args):
         result = {
             "isolated": True,
             "real_runner_activation": True,
-            "hook_count": 3,
+            "hook_count": 4,
+            "prepare_history_reference_and_target_exclusion": True,
             "real_host_item_roundtrip": True,
             "real_host_prefix_layout_cases": cases,
             "provider_replay_and_idempotence": True,
